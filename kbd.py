@@ -51,10 +51,13 @@ def main():
     next_battery = time.ticks_add(time.ticks_ms(), config.BATTERY_UPDATE_MS)
 
     led = None
-    led_state = None
+    led_on = 0 if config.LED_ACTIVE_LOW else 1
+    led_off = 1 - led_on
+    led_state = led_off
+    led_tick = time.ticks_ms()
     if config.LED_PIN is not None:
         from machine import Pin
-        led = Pin(config.LED_PIN, Pin.OUT, value=1)
+        led = Pin(config.LED_PIN, Pin.OUT, value=led_off)
 
     pressed = []   # [(usage, modifier, label), ...]
     last_connected = False
@@ -112,10 +115,18 @@ def main():
                 hid.notify_battery()
 
         if led is not None:
-            want = 0 if hid.connected else 1
-            if want != led_state:
-                led.value(want)
-                led_state = want
+            if hid.connected:
+                # 已连接：常亮
+                if led_state != led_on:
+                    led.value(led_on)
+                    led_state = led_on
+            else:
+                # 未连接：按 LED_BLINK_MS 闪烁
+                now = time.ticks_ms()
+                if time.ticks_diff(now, led_tick) >= config.LED_BLINK_MS:
+                    led_tick = now
+                    led_state = led_off if led_state == led_on else led_on
+                    led.value(led_state)
 
         time.sleep_ms(config.POLL_MS)
 

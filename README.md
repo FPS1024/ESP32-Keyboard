@@ -17,7 +17,8 @@
   默认 `BATTERY_DEFAULT=100`，接电池分压后可显示真实电量
 - ✅ 广播同时带 HID `0x1812` 和电池 `0x180F`，Appearance 为键盘，便于 iOS/macOS 识别
 - ✅ iPhone 实测通过：出现配对/绑定流程，负一屏电池小组件显示电量
-- ✅ 自动运行已关闭：`main.py` 改名为 `main_off.py`，调试时手动运行
+- ✅ `main.py` 已启用，上电自动运行
+- ✅ D2 蓝色状态灯：未连接闪烁，连接后常亮
 
 ## 接线
 
@@ -53,16 +54,23 @@
 | `ble_hid.py` | BLE HID 键盘协议实现（服务注册、广播、通知） |
 | `buttons.py` | 按键扫描与消抖 |
 | `kbd.py` | 键盘主循环（模块形式，方便调试） |
-| `main_off.py` | 备用开机入口，目前**不生效**（`main.py` 名字才会自动运行） |
+| `main.py` | 开机入口，上电自动运行（`import kbd; kbd.main()`） |
 | `ssd1306_min.py` | 精简 SSD1306/SSD1315 I2C 驱动（分块慢刷） |
 | `ui.py` | OLED 状态界面（未连接/已连接/按键/电量） |
 | `battery.py` | 电池 ADC 读取（可选） |
 | `oled_test.py` | 独立的 OLED Hello World 测试 |
 | `tools/repl.py` | 自制的串口 raw-REPL 上传/调试工具（替代 mpremote） |
+| `tools/upload_friendly.py` | raw REPL 卡住时的友好 REPL 上传备用工具 |
+| `tools/run_friendly.py` | 通过友好 REPL 启动程序并串口收日志 |
 
 ## 运行
 
-目前**不会**开机自动运行。在 REPL 里手动启动键盘（会自动初始化 OLED 状态屏）：
+上电会自动执行 `main.py`（内容为 `import kbd; kbd.main()`），同时初始化键盘和 OLED 状态屏，不需要手动操作。
+
+需要调试时：
+
+- 在串口 REPL 里按 **Ctrl-C** 停住当前程序；或
+- 临时把 ESP 上的 `main.py` 改名，再手动运行：
 
 ```python
 import kbd
@@ -75,10 +83,8 @@ kbd.main()
 exec(open('oled_test.py').read())
 ```
 
-如果以后想让它上电自动运行，再把 ESP 上的 `main_off.py` 改回 `main.py` 即可
-（`main.py` 会在开机时自动执行，但会占住 REPL，调试时不要加）。
-
-> 修改 `config.py` 或任何代码后需要复位（Ctrl-D / `machine.reset()`）才会生效。
+> `main.py` 只在开机时执行一次；修改 `config.py` 或任何代码后需要复位
+> （Ctrl-D / `machine.reset()`）才会生效。
 
 ## 配对
 
@@ -134,6 +140,24 @@ oled.show()
 `show_slow()` / `show_pages_slow()` 分块发送，块间 `time.sleep_ms()`；
 按键只更新 page 5。否则 ESP32 的 BLE 协议栈会被 I2C 突发饿死，
 表现为**每刷一次屏就掉一次线**（实测整屏刷新 30 秒掉 40+ 次）。
+
+## D2 状态灯
+
+- D2 是单色蓝色 LED，多数 ESP32 DevKit 接 **GPIO2**，高电平点亮
+- 未连接：每 `LED_BLINK_MS`（默认 500ms）闪烁
+- 已连接：常亮
+- 配置在 `config.py`：
+
+```python
+LED_PIN = 2
+LED_ACTIVE_LOW = False
+LED_BLINK_MS = 500
+```
+
+如果板子是低电平点亮，把 `LED_ACTIVE_LOW` 改成 `True`。
+
+> **PWR 红灯**通常是硬件直连 3.3V，不是 GPIO，软件无法关闭；
+> 只能拆掉 LED/限流电阻或割线。
 
 ## 电量显示与 Apple 设备
 
@@ -261,8 +285,8 @@ python3 tools/repl.py start "import kbd; kbd.main()" 60   # 跑 60 秒并实时�
    拔掉所有外接线、按 EN/RST 复位即可恢复。
 
 8. 如果串口卡在 raw REPL，Thonny 的 Ctrl-C / Stop 是退不出来的，
-   需要发 **Ctrl-B** 或硬件复位。调试时不要加 `main.py`，否则它会
-   在开机时占住 REPL。
+   需要发 **Ctrl-B** 或硬件复位。主程序现在是 `main.py`，开机自动运行；
+   调试时按 Ctrl-C，或临时把 `main.py` 改名。
 
 9. **OLED 刷新会饿死 BLE**。整屏 1KB I2C 突发会让 BLE 连接立刻断开，
    30 秒内可掉 40+ 次；3 字节命令则完全稳定。当前实现：
